@@ -5,11 +5,16 @@ Uses mobilecli binary + WebDriverAgent + xcrun simctl directly.
 No dependency on mobile-mcp server.
 """
 
+import io
 import os
 import base64
 from typing import Any
 
+from PIL import Image
 from mcp.server.fastmcp import FastMCP, Image as MCPImage
+
+# Max long edge for images returned to LLM (Claude optimal: 1568px)
+IMAGE_MAX_SIZE = 1568
 
 from .mobile_client import MobileClient
 from .coordinator import Coordinator
@@ -200,15 +205,16 @@ async def mobile_press_button(device: str, button: str) -> str:
 
 @mcp.tool()
 async def mobile_screenshot(device: str) -> list:
-    """Take a screenshot of the mobile device (returns base64 image).
+    """Take a screenshot of the mobile device (returns resized image for LLM).
 
     Args:
         device: Device identifier
     """
     png_bytes = await _get_mobile().take_screenshot(device)
+    resized = _resize_image_bytes(png_bytes)
     return [
         "Screenshot taken",
-        MCPImage(data=png_bytes, format="png"),
+        MCPImage(data=resized, format="png"),
     ]
 
 
@@ -252,10 +258,11 @@ async def mobile_find_elements(
     # Format output
     text = _format_find_elements(result)
 
-    # Annotated image
+    # Annotated image (resized for LLM)
     items: list[Any] = [text]
     if result.get("annotated_image"):
         image_bytes = base64.b64decode(result["annotated_image"])
+        image_bytes = _resize_image_bytes(image_bytes)
         items.append(MCPImage(data=image_bytes, format="png"))
 
     return items
@@ -284,6 +291,7 @@ async def mobile_parse_image(
 
     elements_text = _format_elements_raw(result["elements"], result["image_size"])
     image_bytes = base64.b64decode(result["annotated_image"])
+    image_bytes = _resize_image_bytes(image_bytes)
 
     return [elements_text, MCPImage(data=image_bytes, format="png")]
 
@@ -291,6 +299,24 @@ async def mobile_parse_image(
 # ===========================================================================
 # Formatting helpers
 # ===========================================================================
+
+
+def _resize_image_bytes(png_bytes: bytes, max_size: int = IMAGE_MAX_SIZE) -> bytes:
+    """Resize image so long edge fits within max_size. Returns PNG bytes."""
+    img = Image.open(io.BytesIO(png_bytes))
+    w, h = img.size
+    if max(w, h) <= max_size:
+        return png_bytes
+    if w >= h:
+        new_w = max_size
+        new_h = int(max_size * h / w)
+    else:
+        new_h = max_size
+        new_w = int(max_size * w / h)
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _format_find_elements(result: dict) -> str:

@@ -1,8 +1,18 @@
 # coding: utf-8
 """Shared fixtures for mobile-parser tests."""
 
+import io
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from PIL import Image as PILImage
+
+
+def _make_test_png(width=100, height=200) -> bytes:
+    """Create a small valid PNG for testing."""
+    img = PILImage.new("RGB", (width, height), "red")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 @pytest.fixture
@@ -22,7 +32,7 @@ def mock_mobile():
     client.swipe = AsyncMock(return_value="Swiped up")
     client.type_text = AsyncMock(return_value="Typed: hello")
     client.press_button = AsyncMock(return_value="Pressed HOME")
-    client.take_screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\n")
+    client.take_screenshot = AsyncMock(return_value=_make_test_png())
     client.save_screenshot = AsyncMock(return_value="Saved screenshot to /tmp/x.png")
     return client
 
