@@ -1,8 +1,26 @@
 # mobile-parser
 
-Mobile testing MCP server that combines [OmniParser](https://github.com/microsoft/OmniParser) UI element detection with device control via [mobile-mcp](https://github.com/nicholasyan/mobile-mcp).
+Mobile testing MCP server that combines [OmniParser](https://github.com/microsoft/OmniParser) UI element detection with direct device control.
 
 OmniParser detects UI elements directly from screenshots, making it accurate even for apps where traditional accessibility-tree-based coordinate estimation fails (e.g., Flutter WebView apps).
+
+## Architecture
+
+No dependency on mobile-mcp server. Directly uses:
+- **mobilecli binary** (`@mobilenext/mobilecli`) for device discovery
+- **WebDriverAgent HTTP API** for screen interactions (tap, swipe, type)
+- **xcrun simctl** for iOS simulator app management
+- **OmniParser** (YOLO + Florence-2 + EasyOCR) for vision-based UI element detection
+
+```
+mobile-parser (MCP Server)
+├── server.py          → FastMCP server with 16 tools
+├── coordinator.py     → Screenshot → OmniParser → coordinate conversion pipeline
+├── mobile_client.py   → Direct device control (mobilecli + WDA + xcrun simctl)
+├── mobilecli.py       → @mobilenext/mobilecli binary wrapper
+├── wda.py             → WebDriverAgent HTTP client
+└── parser.py          → OmniParser (YOLO + Florence-2 + EasyOCR)
+```
 
 ## Quick Start
 
@@ -15,12 +33,17 @@ claude mcp add mobile-parser -- uvx --from "git+https://github.com/mi6ock/mobile
 ### Prerequisites
 
 - **Python 3.10+** (managed by uv automatically)
-- **Node.js / npm** (for mobile-mcp subprocess)
+- **Node.js / npm** (for mobilecli binary)
 - **Xcode + iOS Simulator** (for iOS device control)
+- **WebDriverAgent** installed on the simulator
+  - See: [Setup for iOS Simulator](https://github.com/nicholasyan/mobile-mcp/wiki/Setup-for-iOS-Simulator)
+- **mobilecli binary**: `npm install -g @mobilenext/mobilecli`
 
 ### First Run
 
-On the first tool call, OmniParser models (~1.5GB) are automatically downloaded from HuggingFace (`microsoft/OmniParser-v2.0`) to `~/.cache/omniparser/`.
+On the first tool call involving OmniParser, models (~1.5GB) are automatically downloaded from HuggingFace (`microsoft/OmniParser-v2.0`) to `~/.cache/omniparser/`.
+
+WebDriverAgent is auto-started on iOS simulators if installed. If WDA is already running, it's reused.
 
 ## Tools (16 total)
 
@@ -60,11 +83,30 @@ On the first tool call, OmniParser models (~1.5GB) are automatically downloaded 
 ```
 
 `mobile_find_elements` handles the full pipeline:
-1. Takes a screenshot of the device
+1. Takes a screenshot of the device via WDA
 2. Runs OmniParser to detect all UI elements (text + icons)
 3. Converts pixel coordinates to logical screen coordinates
 
 The returned `tap_x`/`tap_y` can be passed directly to `mobile_tap()`.
+
+## Testing with sample_app
+
+The [sample_app](https://github.com/mi6ock/mcp_sandbox/tree/main/sample_app) is a Flutter WebView app where traditional accessibility-based coordinate estimation tends to be inaccurate.
+
+To test:
+
+1. Boot an iOS Simulator
+2. Build and install sample_app on the simulator:
+   ```bash
+   cd sample_app && flutter run
+   ```
+3. Add mobile-parser to Claude Code:
+   ```bash
+   claude mcp add mobile-parser -- uvx --from "git+https://github.com/mi6ock/mobile-parser.git" mobile-parser
+   ```
+4. Use `mobile_find_elements` to detect UI elements and verify tap coordinates are accurate within the WebView
+
+The OmniParser vision-based approach detects elements directly from screenshots, providing accurate tap coordinates even in challenging scenarios where accessibility trees are unreliable.
 
 ## Environment Variables
 
@@ -72,20 +114,7 @@ The returned `tap_x`/`tap_y` can be passed directly to `mobile_tap()`.
 |----------|-------------|---------|
 | `OMNIPARSER_WEIGHTS_DIR` | Override model weights directory | `~/.cache/omniparser` |
 | `OMNIPARSER_DEVICE` | Force inference device (`cuda`/`mps`/`cpu`) | Auto-detect |
-
-## Testing with sample_app
-
-The [sample_app](https://github.com/mi6ock/mcp_sandbox/tree/main/sample_app) is a Flutter WebView app where traditional accessibility-based coordinate estimation tends to be inaccurate. This MCP uses OmniParser's vision-based approach, which detects elements directly from screenshots and provides accurate tap coordinates even in these challenging scenarios.
-
-## Architecture
-
-```
-mobile-parser (MCP Server)
-├── server.py          → FastMCP server with 16 tools
-├── coordinator.py     → Screenshot → OmniParser → coordinate conversion pipeline
-├── mobile_client.py   → Subprocess MCP client for @mobilenext/mobile-mcp
-└── parser.py          → OmniParser (YOLO + Florence-2 + EasyOCR)
-```
+| `MOBILECLI_PATH` | Override mobilecli binary path | Auto-detect |
 
 ## License
 

@@ -24,19 +24,6 @@ class Coordinator:
 
     def __init__(self, mobile: MobileClient) -> None:
         self._mobile = mobile
-        self._screen_sizes: dict[str, tuple[int, int]] = {}
-
-    async def _get_screen_size(self, device: str) -> tuple[int, int]:
-        """Get logical screen size for a device, with caching."""
-        if device not in self._screen_sizes:
-            result = await self._mobile.call_tool(
-                "mobile_get_screen_size", {"device": device}
-            )
-            # result.content is a list of content items
-            text = _extract_text(result)
-            w, h = _parse_screen_size(text)
-            self._screen_sizes[device] = (w, h)
-        return self._screen_sizes[device]
 
     async def find_elements(
         self, device: str, box_threshold: float = 0.05
@@ -52,13 +39,11 @@ class Coordinator:
         """
         # 1. Save screenshot to temp file
         screenshot_path = tempfile.mktemp(suffix=".png", prefix="mobile_parser_")
-        await self._mobile.call_tool(
-            "mobile_save_screenshot",
-            {"device": device, "saveTo": screenshot_path},
-        )
+        await self._mobile.save_screenshot(device, screenshot_path)
 
-        # 2. Get screen size (cached)
-        screen_w, screen_h = await self._get_screen_size(device)
+        # 2. Get screen size (cached inside mobile client)
+        size = await self._mobile.get_screen_size_dict(device)
+        screen_w, screen_h = size["width"], size["height"]
 
         # 3. Run OmniParser (in thread pool to avoid blocking)
         loop = asyncio.get_running_loop()
@@ -92,33 +77,3 @@ class Coordinator:
         return await loop.run_in_executor(
             None, parser.parse_image, image_path, box_threshold
         )
-
-
-def _extract_text(result: Any) -> str:
-    """Extract text content from an MCP call_tool result."""
-    if hasattr(result, "content"):
-        for item in result.content:
-            if hasattr(item, "text"):
-                return item.text
-    return str(result)
-
-
-def _parse_screen_size(text: str) -> tuple[int, int]:
-    """Parse screen size from mobile_get_screen_size output.
-
-    Expected format varies, but typically contains width and height as integers.
-    Examples: "430x932", "Width: 430, Height: 932", or JSON-like output.
-    """
-    import re
-
-    # Try "WxH" pattern
-    m = re.search(r"(\d+)\s*[xX\u00d7]\s*(\d+)", text)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-
-    # Try extracting two numbers (width, height order)
-    nums = re.findall(r"\d+", text)
-    if len(nums) >= 2:
-        return int(nums[0]), int(nums[1])
-
-    raise ValueError(f"Could not parse screen size from: {text}")

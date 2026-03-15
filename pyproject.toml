@@ -1,7 +1,7 @@
 [project]
 name = "mobile-parser"
 version = "0.1.0"
-description = "Mobile testing MCP server: OmniParser UI element detection + device control via mobile-mcp"
+description = "Mobile testing MCP server: OmniParser UI element detection + direct device control (mobilecli + WDA)"
 requires-python = ">=3.10"
 dependencies = [
     # Core ML
@@ -43,6 +43,7 @@ packages = ["src/mobile_parser"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [build-system]
 requires = ["hatchling"]

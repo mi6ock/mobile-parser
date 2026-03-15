@@ -1,5 +1,9 @@
 # coding: utf-8
-"""Mobile Parser MCP Server - Mobile testing with OmniParser UI detection + device control."""
+"""Mobile Parser MCP Server - Mobile testing with OmniParser UI detection + direct device control.
+
+Uses mobilecli binary + WebDriverAgent + xcrun simctl directly.
+No dependency on mobile-mcp server.
+"""
 
 import os
 import base64
@@ -21,76 +25,31 @@ _mobile: MobileClient | None = None
 _coordinator: Coordinator | None = None
 
 
-async def _get_mobile() -> MobileClient:
-    """Get or create the mobile-mcp client."""
+def _get_mobile() -> MobileClient:
+    """Get or create the mobile client."""
     global _mobile
     if _mobile is None:
         _mobile = MobileClient()
-        await _mobile.start()
     return _mobile
 
 
-async def _get_coordinator() -> Coordinator:
+def _get_coordinator() -> Coordinator:
     """Get or create the coordinator."""
     global _coordinator
     if _coordinator is None:
-        mobile = await _get_mobile()
-        _coordinator = Coordinator(mobile)
+        _coordinator = Coordinator(_get_mobile())
     return _coordinator
 
 
-async def _proxy(tool_name: str, arguments: dict[str, Any]) -> str:
-    """Proxy a tool call to mobile-mcp and return its text output."""
-    mobile = await _get_mobile()
-    result = await mobile.call_tool(tool_name, arguments)
-    return _extract_text(result)
-
-
-async def _proxy_with_image(tool_name: str, arguments: dict[str, Any]) -> list:
-    """Proxy a tool call to mobile-mcp and return text + image output."""
-    mobile = await _get_mobile()
-    result = await mobile.call_tool(tool_name, arguments)
-    return _extract_all_content(result)
-
-
-def _extract_text(result: Any) -> str:
-    """Extract text content from an MCP call_tool result."""
-    if hasattr(result, "content"):
-        texts = []
-        for item in result.content:
-            if hasattr(item, "text"):
-                texts.append(item.text)
-        if texts:
-            return "\n".join(texts)
-    return str(result)
-
-
-def _extract_all_content(result: Any) -> list:
-    """Extract all content (text + images) from an MCP call_tool result."""
-    items = []
-    if hasattr(result, "content"):
-        for item in result.content:
-            if hasattr(item, "text"):
-                items.append(item.text)
-            elif hasattr(item, "data") and hasattr(item, "mimeType"):
-                # Image content - convert to MCPImage
-                data = item.data
-                if isinstance(data, str):
-                    data = base64.b64decode(data)
-                fmt = "png" if "png" in (item.mimeType or "") else "jpeg"
-                items.append(MCPImage(data=data, format=fmt))
-    return items if items else [str(result)]
-
-
 # ===========================================================================
-# Device management tools (proxied from mobile-mcp)
+# Device management tools
 # ===========================================================================
 
 
 @mcp.tool()
 async def mobile_list_devices() -> str:
     """List all available devices (physical devices and simulators)."""
-    return await _proxy("mobile_list_available_devices", {"noParams": {}})
+    return await _get_mobile().list_devices()
 
 
 @mcp.tool()
@@ -100,7 +59,7 @@ async def mobile_get_screen_size(device: str) -> str:
     Args:
         device: Device identifier (from mobile_list_devices)
     """
-    return await _proxy("mobile_get_screen_size", {"device": device})
+    return await _get_mobile().get_screen_size(device)
 
 
 @mcp.tool()
@@ -110,7 +69,7 @@ async def mobile_list_apps(device: str) -> str:
     Args:
         device: Device identifier
     """
-    return await _proxy("mobile_list_apps", {"device": device})
+    return await _get_mobile().list_apps(device)
 
 
 @mcp.tool()
@@ -121,9 +80,7 @@ async def mobile_launch_app(device: str, packageName: str) -> str:
         device: Device identifier
         packageName: Package name of the app to launch
     """
-    return await _proxy(
-        "mobile_launch_app", {"device": device, "packageName": packageName}
-    )
+    return await _get_mobile().launch_app(device, packageName)
 
 
 @mcp.tool()
@@ -134,9 +91,7 @@ async def mobile_terminate_app(device: str, packageName: str) -> str:
         device: Device identifier
         packageName: Package name of the app to terminate
     """
-    return await _proxy(
-        "mobile_terminate_app", {"device": device, "packageName": packageName}
-    )
+    return await _get_mobile().terminate_app(device, packageName)
 
 
 @mcp.tool()
@@ -147,11 +102,11 @@ async def mobile_open_url(device: str, url: str) -> str:
         device: Device identifier
         url: The URL to open
     """
-    return await _proxy("mobile_open_url", {"device": device, "url": url})
+    return await _get_mobile().open_url(device, url)
 
 
 # ===========================================================================
-# Interaction tools (proxied from mobile-mcp)
+# Interaction tools
 # ===========================================================================
 
 
@@ -164,10 +119,7 @@ async def mobile_tap(device: str, x: float, y: float) -> str:
         x: X coordinate in logical pixels
         y: Y coordinate in logical pixels
     """
-    return await _proxy(
-        "mobile_click_on_screen_at_coordinates",
-        {"device": device, "x": x, "y": y},
-    )
+    return await _get_mobile().tap(device, x, y)
 
 
 @mcp.tool()
@@ -179,10 +131,7 @@ async def mobile_double_tap(device: str, x: float, y: float) -> str:
         x: X coordinate in logical pixels
         y: Y coordinate in logical pixels
     """
-    return await _proxy(
-        "mobile_double_tap_on_screen",
-        {"device": device, "x": x, "y": y},
-    )
+    return await _get_mobile().double_tap(device, x, y)
 
 
 @mcp.tool()
@@ -197,10 +146,8 @@ async def mobile_long_press(
         y: Y coordinate in logical pixels
         duration: Duration in milliseconds (default 500ms)
     """
-    args: dict[str, Any] = {"device": device, "x": x, "y": y}
-    if duration is not None:
-        args["duration"] = duration
-    return await _proxy("mobile_long_press_on_screen_at_coordinates", args)
+    d = duration if duration is not None else 500
+    return await _get_mobile().long_press(device, x, y, d)
 
 
 @mcp.tool()
@@ -220,14 +167,7 @@ async def mobile_swipe(
         y: Starting Y coordinate (default: center)
         distance: Swipe distance in pixels
     """
-    args: dict[str, Any] = {"device": device, "direction": direction}
-    if x is not None:
-        args["x"] = x
-    if y is not None:
-        args["y"] = y
-    if distance is not None:
-        args["distance"] = distance
-    return await _proxy("mobile_swipe_on_screen", args)
+    return await _get_mobile().swipe(device, direction, x, y, distance)
 
 
 @mcp.tool()
@@ -239,9 +179,7 @@ async def mobile_type_text(device: str, text: str, submit: bool = False) -> str:
         text: The text to type
         submit: Whether to press enter after typing
     """
-    return await _proxy(
-        "mobile_type_keys", {"device": device, "text": text, "submit": submit}
-    )
+    return await _get_mobile().type_text(device, text, submit)
 
 
 @mcp.tool()
@@ -252,9 +190,7 @@ async def mobile_press_button(device: str, button: str) -> str:
         device: Device identifier
         button: Button name (HOME, BACK, VOLUME_UP, VOLUME_DOWN, ENTER, etc.)
     """
-    return await _proxy(
-        "mobile_press_button", {"device": device, "button": button}
-    )
+    return await _get_mobile().press_button(device, button)
 
 
 # ===========================================================================
@@ -269,7 +205,11 @@ async def mobile_screenshot(device: str) -> list:
     Args:
         device: Device identifier
     """
-    return await _proxy_with_image("mobile_take_screenshot", {"device": device})
+    png_bytes = await _get_mobile().take_screenshot(device)
+    return [
+        "Screenshot taken",
+        MCPImage(data=png_bytes, format="png"),
+    ]
 
 
 @mcp.tool()
@@ -280,9 +220,7 @@ async def mobile_save_screenshot(device: str, saveTo: str) -> str:
         device: Device identifier
         saveTo: File path to save the screenshot
     """
-    return await _proxy(
-        "mobile_save_screenshot", {"device": device, "saveTo": saveTo}
-    )
+    return await _get_mobile().save_screenshot(device, saveTo)
 
 
 @mcp.tool()
@@ -308,7 +246,7 @@ async def mobile_find_elements(
         - Text with detected elements and their tap coordinates
         - Annotated image with bounding boxes and IDs
     """
-    coordinator = await _get_coordinator()
+    coordinator = _get_coordinator()
     result = await coordinator.find_elements(device, box_threshold)
 
     # Format output
@@ -341,10 +279,9 @@ async def mobile_parse_image(
         - Text description of detected elements with coordinates
         - Annotated image with bounding boxes and IDs
     """
-    coordinator = await _get_coordinator()
+    coordinator = _get_coordinator()
     result = await coordinator.parse_image_file(image_path, box_threshold)
 
-    # Format output (same as omniparser-simple)
     elements_text = _format_elements_raw(result["elements"], result["image_size"])
     image_bytes = base64.b64decode(result["annotated_image"])
 
