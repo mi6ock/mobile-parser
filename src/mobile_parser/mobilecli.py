@@ -1,11 +1,10 @@
 # coding: utf-8
-"""Mobilecli binary wrapper - finds and executes the @mobilenext/mobilecli binary."""
+"""Mobilecli wrapper - executes @mobilenext/mobilecli via npx (auto-download)."""
 
 from __future__ import annotations
 
 import json
 import os
-import platform
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -22,119 +21,26 @@ class DeviceInfo:
 
 
 class MobilecliError(Exception):
-    """Error from mobilecli binary."""
+    """Error from mobilecli."""
     pass
 
 
 class Mobilecli:
-    """Wrapper around the @mobilenext/mobilecli binary."""
+    """Executes mobilecli commands via npx. No pre-install required."""
 
-    def __init__(self) -> None:
-        self._binary_path: str | None = None
+    def _cmd_prefix(self) -> list[str]:
+        """Return the command prefix for mobilecli.
 
-    @property
-    def binary_path(self) -> str:
-        if self._binary_path is None:
-            self._binary_path = self._find_binary()
-        return self._binary_path
-
-    def _find_binary(self) -> str:
-        """Find the mobilecli binary, matching mobile-mcp's resolution logic."""
-        # 1. Environment variable
+        Uses MOBILECLI_PATH if set, otherwise npx auto-downloads.
+        """
         env_path = os.environ.get("MOBILECLI_PATH")
         if env_path and os.path.isfile(env_path):
-            return env_path
-
-        # 2. Determine platform and architecture
-        system = platform.system().lower()
-        if system == "darwin":
-            plat = "darwin"
-        elif system == "linux":
-            plat = "linux"
-        elif system == "windows":
-            plat = "windows"
-        else:
-            plat = system
-
-        machine = platform.machine().lower()
-        if machine in ("arm64", "aarch64"):
-            arch = "arm64"
-        else:
-            arch = "amd64"
-
-        ext = ".exe" if plat == "windows" else ""
-        binary_name = f"mobilecli-{plat}-{arch}{ext}"
-
-        # 3. Try to find via npx/npm global
-        search_paths = []
-
-        # Check if @mobilenext/mobilecli is installed globally or locally
-        try:
-            result = subprocess.run(
-                ["npm", "root", "-g"],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0:
-                global_path = os.path.join(
-                    result.stdout.strip(),
-                    "@mobilenext", "mobilecli", "bin", binary_name
-                )
-                search_paths.append(global_path)
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        # Check local node_modules
-        cwd = os.getcwd()
-        local_path = os.path.join(
-            cwd, "node_modules", "@mobilenext", "mobilecli", "bin", binary_name
-        )
-        search_paths.append(local_path)
-
-        # Check relative to this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        for parent in [script_dir, os.path.dirname(script_dir), os.path.dirname(os.path.dirname(script_dir))]:
-            candidate = os.path.join(
-                parent, "node_modules", "@mobilenext", "mobilecli", "bin", binary_name
-            )
-            search_paths.append(candidate)
-
-        for path in search_paths:
-            if os.path.isfile(path):
-                os.chmod(path, 0o755)
-                return path
-
-        # 4. Try installing via npx
-        try:
-            result = subprocess.run(
-                ["npx", "-y", "@mobilenext/mobilecli", "--version"],
-                capture_output=True, text=True, timeout=60
-            )
-            if result.returncode == 0:
-                # npx installed it, now find the binary
-                npm_cache_result = subprocess.run(
-                    ["npm", "root", "-g"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if npm_cache_result.returncode == 0:
-                    global_path = os.path.join(
-                        npm_cache_result.stdout.strip(),
-                        "@mobilenext", "mobilecli", "bin", binary_name
-                    )
-                    if os.path.isfile(global_path):
-                        os.chmod(global_path, 0o755)
-                        return global_path
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        raise MobilecliError(
-            f"mobilecli binary not found. Install it with: npm install -g @mobilenext/mobilecli\n"
-            f"Or set MOBILECLI_PATH environment variable.\n"
-            f"Searched for: {binary_name}"
-        )
+            return [env_path]
+        return ["npx", "-y", "@mobilenext/mobilecli"]
 
     def execute(self, args: list[str], timeout: int = 30) -> str:
         """Execute mobilecli command and return stdout as string."""
-        cmd = [self.binary_path] + args
+        cmd = self._cmd_prefix() + args
         try:
             result = subprocess.run(
                 cmd,
@@ -149,10 +55,14 @@ class Mobilecli:
             return result.stdout.strip()
         except subprocess.TimeoutExpired:
             raise MobilecliError(f"mobilecli {' '.join(args)} timed out after {timeout}s")
+        except FileNotFoundError:
+            raise MobilecliError(
+                "npx not found. Please install Node.js: https://nodejs.org/"
+            )
 
     def execute_buffer(self, args: list[str], timeout: int = 30) -> bytes:
         """Execute mobilecli command and return stdout as bytes."""
-        cmd = [self.binary_path] + args
+        cmd = self._cmd_prefix() + args
         try:
             result = subprocess.run(
                 cmd,
@@ -166,6 +76,10 @@ class Mobilecli:
             return result.stdout
         except subprocess.TimeoutExpired:
             raise MobilecliError(f"mobilecli {' '.join(args)} timed out after {timeout}s")
+        except FileNotFoundError:
+            raise MobilecliError(
+                "npx not found. Please install Node.js: https://nodejs.org/"
+            )
 
     def get_version(self) -> str:
         """Get mobilecli version."""
