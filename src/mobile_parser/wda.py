@@ -81,12 +81,17 @@ class WebDriverAgent:
             pass  # Best effort
 
     def get_screen_size(self, session_id: str) -> dict[str, int]:
-        """Get screen size (width, height, scale)."""
+        """Get screen size (width, height, scale).
+
+        WDA returns: {"value": {"screenSize": {"width": W, "height": H}, "scale": S}}
+        screenSize is already in logical pixels (points).
+        """
         result = self._request("GET", f"/session/{session_id}/wda/screen")
         value = result.get("value", {})
+        screen_size = value.get("screenSize", {})
         return {
-            "width": int(value.get("width", 0) / value.get("scale", 1)),
-            "height": int(value.get("height", 0) / value.get("scale", 1)),
+            "width": screen_size.get("width", 0),
+            "height": screen_size.get("height", 0),
             "scale": value.get("scale", 1),
         }
 
