@@ -56,6 +56,7 @@ class MobileClient:
         self._wda_instances: dict[str, WebDriverAgent] = {}
         self._wda_sessions: dict[str, str] = {}
         self._screen_sizes: dict[str, dict[str, int]] = {}
+        self._android_scales: dict[str, float] = {}  # device_id -> density / 160
         self._device_platforms: dict[str, str] = {}  # device_id -> "ios" | "android"
 
     @property
@@ -225,10 +226,11 @@ class MobileClient:
     def _android_get_screen_size(self, device: str) -> dict[str, int]:
         """Get Android screen size in dp (density-independent pixels) via adb.
 
-        Android screenshots are captured in physical pixels, but adb input
-        events (tap/swipe) use dp coordinates.  We convert physical → dp so
-        that the proportional scaling in ``find_elements`` produces correct
-        tap targets.
+        Android screenshots are captured in physical pixels.
+        ``adb shell input tap/swipe`` also uses **physical pixel** coordinates.
+        We still convert to dp for the LLM-facing screen size and for
+        ``find_elements`` proportional scaling, but store the scale factor
+        so that interaction methods can convert dp back to physical pixels.
         """
         # 1. Physical pixel size
         output = self._adb_text(device, ["shell", "wm", "size"])
@@ -253,6 +255,7 @@ class MobileClient:
             "height": round(phys_h / scale),
         }
         self._screen_sizes[device] = size
+        self._android_scales[device] = scale
         return size
 
     async def list_apps(self, device: str) -> str:
@@ -349,13 +352,28 @@ class MobileClient:
 
     # ===== Interactions =====
 
+    def _android_dp_to_px(self, device: str, x: float, y: float) -> tuple[int, int]:
+        """Convert dp (logical) coordinates to physical pixel coordinates.
+
+        ``adb shell input tap/swipe`` uses physical pixel coordinates,
+        while ``find_elements`` returns dp coordinates.  This method
+        performs the reverse conversion using the cached density scale.
+        """
+        scale = self._android_scales.get(device)
+        if scale is None:
+            # Ensure screen size (and scale) has been queried
+            self._android_get_screen_size(device)
+            scale = self._android_scales.get(device, 1.0)
+        return int(x * scale), int(y * scale)
+
     async def tap(self, device: str, x: float, y: float) -> str:
         """Tap at coordinates."""
         loop = asyncio.get_running_loop()
 
         def _tap():
             if self._is_android(device):
-                self._adb_text(device, ["shell", "input", "tap", str(int(x)), str(int(y))])
+                px_x, px_y = self._android_dp_to_px(device, x, y)
+                self._adb_text(device, ["shell", "input", "tap", str(px_x), str(px_y)])
                 return f"Tapped ({x}, {y})"
 
             wda, session_id = self._get_session(device)
@@ -370,9 +388,10 @@ class MobileClient:
 
         def _double_tap():
             if self._is_android(device):
-                self._adb_text(device, ["shell", "input", "tap", str(int(x)), str(int(y))])
+                px_x, px_y = self._android_dp_to_px(device, x, y)
+                self._adb_text(device, ["shell", "input", "tap", str(px_x), str(px_y)])
                 time.sleep(0.05)
-                self._adb_text(device, ["shell", "input", "tap", str(int(x)), str(int(y))])
+                self._adb_text(device, ["shell", "input", "tap", str(px_x), str(px_y)])
                 return f"Double-tapped ({x}, {y})"
 
             wda, session_id = self._get_session(device)
@@ -387,10 +406,11 @@ class MobileClient:
 
         def _long_press():
             if self._is_android(device):
+                px_x, px_y = self._android_dp_to_px(device, x, y)
                 # adb swipe with same start/end = long press
                 self._adb_text(device, [
                     "shell", "input", "swipe",
-                    str(int(x)), str(int(y)), str(int(x)), str(int(y)), str(int(duration))
+                    str(px_x), str(px_y), str(px_x), str(px_y), str(int(duration))
                 ])
                 return f"Long-pressed ({x}, {y}) for {duration}ms"
 
@@ -434,10 +454,12 @@ class MobileClient:
             end_y = start_y + dy
 
             if self._is_android(device):
+                px_sx, px_sy = self._android_dp_to_px(device, start_x, start_y)
+                px_ex, px_ey = self._android_dp_to_px(device, end_x, end_y)
                 self._adb_text(device, [
                     "shell", "input", "swipe",
-                    str(int(start_x)), str(int(start_y)),
-                    str(int(end_x)), str(int(end_y)), "300"
+                    str(px_sx), str(px_sy),
+                    str(px_ex), str(px_ey), "300"
                 ])
                 return f"Swiped {direction}"
 
