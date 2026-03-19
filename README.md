@@ -11,7 +11,7 @@ OmniParser detects UI elements directly from screenshots, making it accurate eve
 ### Add to Claude Code
 
 ```bash
-claude mcp add mobile-parser -- uvx --from "git+https://github.com/mi6ock/mobile-parser.git" mobile-parser
+claude mcp add mobile-parser -- uvx mobile-parser
 ```
 
 ### Prerequisites
@@ -32,10 +32,10 @@ claude mcp add mobile-parser -- uvx --from "git+https://github.com/mi6ock/mobile
 
 | Component | When | Size |
 |-----------|------|------|
-| Python packages (torch, etc.) | `claude mcp add` 時 | ~2GB |
-| mobilecli binary | 初回デバイス操作時 (npx) | ~20MB |
-| OmniParser models | 初回 `mobile_find_elements` 時 | ~1.5GB |
-| Florence-2 processor | 初回アイコンキャプション時 | ~500MB |
+| Python packages (torch, etc.) | First `uvx mobile-parser` run | ~2GB |
+| mobilecli binary | First device operation (npx) | ~20MB |
+| OmniParser models | First `mobile_find_elements` call | ~1.5GB |
+| Florence-2 processor | First icon captioning | ~500MB |
 
 ## Architecture
 
