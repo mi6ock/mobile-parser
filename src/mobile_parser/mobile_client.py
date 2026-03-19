@@ -223,13 +223,35 @@ class MobileClient:
         return await loop.run_in_executor(None, _get)
 
     def _android_get_screen_size(self, device: str) -> dict[str, int]:
-        """Get Android screen size via adb."""
+        """Get Android screen size in dp (density-independent pixels) via adb.
+
+        Android screenshots are captured in physical pixels, but adb input
+        events (tap/swipe) use dp coordinates.  We convert physical → dp so
+        that the proportional scaling in ``find_elements`` produces correct
+        tap targets.
+        """
+        # 1. Physical pixel size
         output = self._adb_text(device, ["shell", "wm", "size"])
         # Output: "Physical size: 1080x2340" or "Override size: ..."
         match = re.search(r"(\d+)x(\d+)", output.split("\n")[-1])
         if not match:
             raise MobileClientError(f"Could not parse screen size: {output}")
-        size = {"width": int(match.group(1)), "height": int(match.group(2))}
+        phys_w, phys_h = int(match.group(1)), int(match.group(2))
+
+        # 2. Display density (dpi) – needed to convert px → dp
+        density_output = self._adb_text(device, ["shell", "wm", "density"])
+        density_match = re.search(r"(\d+)", density_output.split("\n")[-1])
+        if not density_match:
+            # Fallback: assume density 160 (1:1 mapping)
+            scale = 1.0
+        else:
+            dpi = int(density_match.group(1))
+            scale = dpi / 160.0
+
+        size = {
+            "width": round(phys_w / scale),
+            "height": round(phys_h / scale),
+        }
         self._screen_sizes[device] = size
         return size
 
