@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/mobile-parser?style=flat-square)](https://pypi.org/project/mobile-parser/)
 [![Python](https://img.shields.io/pypi/pyversions/mobile-parser?style=flat-square)](https://pypi.org/project/mobile-parser/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 
 An MCP server for mobile app testing that combines [OmniParser](https://github.com/microsoft/OmniParser) vision-based UI element detection with direct device control.
 
@@ -166,4 +166,4 @@ mobile-parser (MCP Server)
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE) — due to the [ultralytics](https://github.com/ultralytics/ultralytics) (YOLOv8) dependency.
