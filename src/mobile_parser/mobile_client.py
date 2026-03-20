@@ -9,10 +9,12 @@ Supports both iOS and Android:
 from __future__ import annotations
 
 import asyncio
+import atexit
 import base64
 import json
 import logging
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -58,6 +60,8 @@ class MobileClient:
         self._screen_sizes: dict[str, dict[str, int]] = {}
         self._android_scales: dict[str, float] = {}  # device_id -> density / 160
         self._device_platforms: dict[str, str] = {}  # device_id -> "ios" | "android"
+        self._wda_processes: dict[str, subprocess.Popen] = {}  # device_id -> xcodebuild proc
+        atexit.register(self._cleanup_wda_processes)
 
     @property
     def mobilecli(self) -> Mobilecli:
@@ -135,38 +139,110 @@ class MobileClient:
             return wda
 
         logger.info(f"WDA not running on {device}, attempting auto-start...")
-        self._start_wda_on_simulator(device)
+        self._start_wda_via_xcodebuild(device)
 
-        for _ in range(100):
+        # Wait up to 30 seconds for WDA to become ready
+        for i in range(60):
             if wda.is_running():
                 logger.info("WDA started successfully")
                 return wda
-            time.sleep(0.1)
+            time.sleep(0.5)
 
         raise MobileClientError(
-            f"WebDriverAgent is not running on device {device}. "
-            f"Please install and launch WebDriverAgent on your simulator.\n"
+            f"WebDriverAgent failed to start on device {device}. "
+            f"Ensure WDA is installed on the simulator.\n"
             f"See: https://github.com/nicholasyan/mobile-mcp/wiki/Setup-for-iOS-Simulator"
         )
 
-    def _start_wda_on_simulator(self, device: str) -> None:
-        """Try to launch WDA on an iOS simulator via xcrun simctl."""
+    def _find_wda_app_path(self, device: str) -> str | None:
+        """Find the installed WDA .app path on a simulator."""
         try:
             result = subprocess.run(
                 ["xcrun", "simctl", "listapps", device],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10,
             )
             if WDA_BUNDLE_ID not in result.stdout:
-                logger.warning(f"WDA ({WDA_BUNDLE_ID}) not installed on {device}")
-                return
+                return None
+            # Parse plist-style output to extract WDA app path
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("Path = ") and "WebDriverAgent" in line:
+                    # Path = "/path/to/WebDriverAgentRunner-Runner.app";
+                    path = line.split('"')[1] if '"' in line else line.split("= ")[1].rstrip(";")
+                    if os.path.isdir(path):
+                        return path
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return None
 
-            subprocess.run(
-                ["xcrun", "simctl", "launch", device, WDA_BUNDLE_ID],
-                capture_output=True, text=True, timeout=10
+    def _create_xctestrun(self, wda_app_path: str) -> str:
+        """Create a temporary .xctestrun plist for WDA."""
+        xctestrun = {
+            "__xctestrun_metadata__": {"FormatVersion": 2},
+            "TestConfigurations": [
+                {
+                    "Name": "Default",
+                    "TestTargets": [
+                        {
+                            "BlueprintName": "WebDriverAgentRunner",
+                            "TestBundlePath": os.path.join(
+                                wda_app_path, "PlugIns", "WebDriverAgentRunner.xctest"
+                            ),
+                            "TestHostPath": wda_app_path,
+                            "UITargetAppPath": wda_app_path,
+                            "IsUITestBundle": True,
+                            "EnvironmentVariables": {"USE_PORT": "8100"},
+                            "CommandLineArguments": [],
+                            "DependentProductPaths": [wda_app_path],
+                        }
+                    ],
+                }
+            ],
+        }
+        path = tempfile.mktemp(suffix=".xctestrun", prefix="wda_")
+        with open(path, "wb") as f:
+            plistlib.dump(xctestrun, f, fmt=plistlib.FMT_XML)
+        return path
+
+    def _start_wda_via_xcodebuild(self, device: str) -> None:
+        """Start WDA on a simulator using xcodebuild test-without-building."""
+        # Don't start twice
+        proc = self._wda_processes.get(device)
+        if proc and proc.poll() is None:
+            logger.info("xcodebuild for WDA already running, waiting...")
+            return
+
+        wda_app = self._find_wda_app_path(device)
+        if not wda_app:
+            raise MobileClientError(
+                f"WebDriverAgent is not installed on device {device}.\n"
+                f"See: https://github.com/nicholasyan/mobile-mcp/wiki/Setup-for-iOS-Simulator"
             )
-            logger.info(f"Launched WDA on simulator {device}")
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.warning(f"Failed to auto-start WDA: {e}")
+
+        xctestrun_path = self._create_xctestrun(wda_app)
+        logger.info(f"Starting WDA via xcodebuild on {device}...")
+
+        proc = subprocess.Popen(
+            [
+                "xcodebuild", "test-without-building",
+                "-xctestrun", xctestrun_path,
+                "-destination", f"id={device}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        self._wda_processes[device] = proc
+
+    def _cleanup_wda_processes(self) -> None:
+        """Terminate all xcodebuild processes started for WDA."""
+        for device, proc in self._wda_processes.items():
+            if proc.poll() is None:
+                logger.info(f"Terminating WDA xcodebuild for {device}")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
     def _get_session(self, device: str) -> tuple[WebDriverAgent, str]:
         """Get WDA instance and session ID, creating session if needed."""
