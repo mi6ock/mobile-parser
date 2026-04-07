@@ -170,16 +170,30 @@ async def mobile_double_tap(device: str, element_id: int) -> str:
 
 @mcp.tool()
 async def mobile_long_press(
-    device: str, x: float, y: float, duration: float | None = None
+    device: str, element_id: int, duration: float | None = None
 ) -> str:
-    """Long press on the screen at given coordinates.
+    """Long press on a UI element identified by its ID from mobile_find_elements.
+
+    You MUST call mobile_find_elements first to detect elements and obtain IDs.
 
     Args:
         device: Device identifier
-        x: X coordinate in logical pixels
-        y: Y coordinate in logical pixels
+        element_id: Element ID returned by mobile_find_elements
         duration: Duration in milliseconds (default 500ms)
     """
+    coords = _element_registry.get(device, {}).get(element_id)
+    if coords is None:
+        if device not in _element_registry:
+            return (
+                "Error: No elements registered for this device. "
+                "Call mobile_find_elements first to detect UI elements."
+            )
+        return (
+            f"Error: Element ID {element_id} not found. "
+            f"Valid IDs: {sorted(_element_registry[device].keys())}. "
+            f"Call mobile_find_elements to refresh."
+        )
+    x, y = coords
     d = duration if duration is not None else 500
     return await _get_mobile().long_press(device, x, y, d)
 

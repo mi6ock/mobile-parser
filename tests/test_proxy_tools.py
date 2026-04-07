@@ -104,17 +104,33 @@ async def test_mobile_double_tap_no_find_elements(mock_mobile):
     assert "find_elements" in result.lower() or "error" in result.lower()
 
 
-async def test_mobile_long_press_default(mock_mobile):
+async def test_mobile_long_press_default(mock_mobile, mock_coordinator):
+    """find_elements で取得した ID でロングプレスできる（デフォルト duration）。"""
+    import mobile_parser.server as srv
     srv._mobile = mock_mobile
-    result = await srv.mobile_long_press("dev1", 100, 200)
-    mock_mobile.long_press.assert_called_once_with("dev1", 100, 200, 500)
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    result = await srv.mobile_long_press("dev1", 0)
+    mock_mobile.long_press.assert_called_once_with("dev1", 215, 466, 500)
     assert "Long-pressed" in result
 
 
-async def test_mobile_long_press_with_duration(mock_mobile):
+async def test_mobile_long_press_with_duration(mock_mobile, mock_coordinator):
+    """duration を指定してロングプレスできる。"""
+    import mobile_parser.server as srv
     srv._mobile = mock_mobile
-    result = await srv.mobile_long_press("dev1", 100, 200, 1000)
-    mock_mobile.long_press.assert_called_once_with("dev1", 100, 200, 1000)
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    result = await srv.mobile_long_press("dev1", 0, 1000)
+    mock_mobile.long_press.assert_called_once_with("dev1", 215, 466, 1000)
+
+
+async def test_mobile_long_press_no_find_elements(mock_mobile):
+    """find_elements なしでロングプレスするとエラー。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    result = await srv.mobile_long_press("dev1", 0)
+    assert "find_elements" in result.lower() or "error" in result.lower()
 
 
 async def test_mobile_swipe_simple(mock_mobile):
