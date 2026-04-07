@@ -117,14 +117,28 @@ async def mobile_open_url(device: str, url: str) -> str:
 
 
 @mcp.tool()
-async def mobile_tap(device: str, x: float, y: float) -> str:
-    """Tap on the screen at given coordinates.
+async def mobile_tap(device: str, element_id: int) -> str:
+    """Tap on a UI element identified by its ID from mobile_find_elements.
+
+    You MUST call mobile_find_elements first to detect elements and obtain IDs.
 
     Args:
         device: Device identifier
-        x: X coordinate in logical pixels
-        y: Y coordinate in logical pixels
+        element_id: Element ID returned by mobile_find_elements
     """
+    coords = _element_registry.get(device, {}).get(element_id)
+    if coords is None:
+        if device not in _element_registry:
+            return (
+                "Error: No elements registered for this device. "
+                "Call mobile_find_elements first to detect UI elements."
+            )
+        return (
+            f"Error: Element ID {element_id} not found. "
+            f"Valid IDs: {sorted(_element_registry[device].keys())}. "
+            f"Call mobile_find_elements to refresh."
+        )
+    x, y = coords
     return await _get_mobile().tap(device, x, y)
 
 

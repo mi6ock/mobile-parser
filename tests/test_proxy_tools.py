@@ -56,11 +56,33 @@ async def test_mobile_open_url(mock_mobile):
 # ---------------------------------------------------------------------------
 
 
-async def test_mobile_tap(mock_mobile):
+async def test_mobile_tap(mock_mobile, mock_coordinator):
+    """find_elements で取得した ID を指定してタップできる。"""
+    import mobile_parser.server as srv
     srv._mobile = mock_mobile
-    result = await srv.mobile_tap("dev1", 100, 200)
-    mock_mobile.tap.assert_called_once_with("dev1", 100, 200)
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    result = await srv.mobile_tap("dev1", 0)
+    mock_mobile.tap.assert_called_once_with("dev1", 215, 466)
     assert "Tapped" in result
+
+
+async def test_mobile_tap_invalid_id(mock_mobile, mock_coordinator):
+    """存在しない ID を指定するとエラーになる。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    result = await srv.mobile_tap("dev1", 999)
+    assert "not found" in result.lower() or "error" in result.lower()
+
+
+async def test_mobile_tap_no_find_elements(mock_mobile):
+    """find_elements を呼ばずにタップするとエラーになる。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    result = await srv.mobile_tap("dev1", 0)
+    assert "find_elements" in result.lower() or "error" in result.lower()
 
 
 async def test_mobile_double_tap(mock_mobile):
