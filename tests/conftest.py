@@ -37,12 +37,40 @@ def mock_mobile():
     return client
 
 
+@pytest.fixture
+def mock_coordinator():
+    """Return a mock Coordinator that returns pre-built elements."""
+    import base64
+    coord = MagicMock()
+    coord.find_elements = AsyncMock(return_value={
+        "elements": [
+            {
+                "id": 0,
+                "type": "text",
+                "content": "Hello",
+                "tap_x": 215,
+                "tap_y": 466,
+                "center_x": 645,
+                "center_y": 1398,
+                "bbox": [0.4, 0.4, 0.6, 0.6],
+            },
+        ],
+        "image_size": {"width": 1290, "height": 2796},
+        "screen_size": {"width": 430, "height": 932},
+        "annotated_image": base64.b64encode(_make_test_png()).decode(),
+        "screenshot_path": "/tmp/screenshot.png",
+    })
+    return coord
+
+
 @pytest.fixture(autouse=True)
 def reset_server_globals():
     """Reset server.py globals before and after every test."""
     import mobile_parser.server as srv
     srv._mobile = None
     srv._coordinator = None
+    srv._element_registry.clear()
     yield
     srv._mobile = None
     srv._coordinator = None
+    srv._element_registry.clear()

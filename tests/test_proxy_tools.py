@@ -129,3 +129,19 @@ async def test_mobile_save_screenshot(mock_mobile):
     result = await srv.mobile_save_screenshot("dev1", "/tmp/x.png")
     mock_mobile.save_screenshot.assert_called_once_with("dev1", "/tmp/x.png")
     assert "/tmp/x.png" in result
+
+
+# ---------------------------------------------------------------------------
+# Element registry
+# ---------------------------------------------------------------------------
+
+
+async def test_find_elements_populates_registry(mock_mobile, mock_coordinator):
+    """find_elements がレジストリに要素を保存する。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    registry = srv._element_registry
+    assert "dev1" in registry
+    assert registry["dev1"][0] == (215, 466)

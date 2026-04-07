@@ -28,6 +28,7 @@ mcp = FastMCP("mobile-parser")
 # Shared instances (initialized on first tool call)
 _mobile: MobileClient | None = None
 _coordinator: Coordinator | None = None
+_element_registry: dict[str, dict[int, tuple[float, float]]] = {}
 
 
 def _get_mobile() -> MobileClient:
@@ -254,6 +255,12 @@ async def mobile_find_elements(
     """
     coordinator = _get_coordinator()
     result = await coordinator.find_elements(device, box_threshold)
+
+    # Update element registry for this device
+    _element_registry[device] = {
+        elem["id"]: (elem["tap_x"], elem["tap_y"])
+        for elem in result["elements"]
+    }
 
     # Format output
     text = _format_find_elements(result)
