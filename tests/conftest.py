@@ -1,6 +1,7 @@
 # coding: utf-8
 """Shared fixtures for mobile-parser tests."""
 
+import base64
 import io
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,7 +41,6 @@ def mock_mobile():
 @pytest.fixture
 def mock_coordinator():
     """Return a mock Coordinator that returns pre-built elements."""
-    import base64
     coord = MagicMock()
     coord.find_elements = AsyncMock(return_value={
         "elements": [

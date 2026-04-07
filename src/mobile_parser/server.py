@@ -242,7 +242,8 @@ async def mobile_find_elements(
     2. Runs OmniParser to detect all UI elements
     3. Converts pixel coordinates to logical screen coordinates
 
-    The returned tap_x/tap_y can be passed directly to mobile_tap().
+    Elements are registered by ID. Pass element IDs to mobile_tap(),
+    mobile_double_tap(), and mobile_long_press() to interact with them.
 
     Args:
         device: Device identifier
