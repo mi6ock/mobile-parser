@@ -85,11 +85,23 @@ async def test_mobile_tap_no_find_elements(mock_mobile):
     assert "find_elements" in result.lower() or "error" in result.lower()
 
 
-async def test_mobile_double_tap(mock_mobile):
+async def test_mobile_double_tap(mock_mobile, mock_coordinator):
+    """find_elements で取得した ID を指定してダブルタップできる。"""
+    import mobile_parser.server as srv
     srv._mobile = mock_mobile
-    result = await srv.mobile_double_tap("dev1", 100, 200)
-    mock_mobile.double_tap.assert_called_once_with("dev1", 100, 200)
+    srv._coordinator = mock_coordinator
+    await srv.mobile_find_elements("dev1")
+    result = await srv.mobile_double_tap("dev1", 0)
+    mock_mobile.double_tap.assert_called_once_with("dev1", 215, 466)
     assert "Double-tapped" in result
+
+
+async def test_mobile_double_tap_no_find_elements(mock_mobile):
+    """find_elements なしでダブルタップするとエラー。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    result = await srv.mobile_double_tap("dev1", 0)
+    assert "find_elements" in result.lower() or "error" in result.lower()
 
 
 async def test_mobile_long_press_default(mock_mobile):
