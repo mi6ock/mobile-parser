@@ -195,3 +195,14 @@ async def test_find_elements_populates_registry(mock_mobile, mock_coordinator):
     registry = srv._element_registry
     assert "dev1" in registry
     assert registry["dev1"][0] == (215, 466)
+
+
+async def test_find_elements_resets_registry(mock_mobile, mock_coordinator):
+    """find_elements を再度呼ぶと古いレジストリが置き換わる。"""
+    import mobile_parser.server as srv
+    srv._mobile = mock_mobile
+    srv._coordinator = mock_coordinator
+    srv._element_registry["dev1"] = {99: (100, 200)}
+    await srv.mobile_find_elements("dev1")
+    assert 99 not in srv._element_registry["dev1"]
+    assert 0 in srv._element_registry["dev1"]
