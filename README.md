@@ -12,7 +12,7 @@ Unlike accessibility-tree-based tools, OmniParser detects UI elements directly f
 
 - **Vision-based element detection** — OmniParser (YOLO + Florence-2 + EasyOCR) finds UI elements from screenshots
 - **Cross-platform** — iOS Simulator and Android (emulator + real device)
-- **Zero-config coordinates** — `find_elements` returns tap-ready coordinates; pass them directly to `tap()`
+- **Element ID-based interaction** — `find_elements` returns elements with IDs; pass the ID to `tap()`, `double_tap()`, `long_press()`
 - **No Appium required** — talks directly to WDA (iOS) and adb (Android)
 - **Auto-download everything** — models, tools, and dependencies fetched on first use
 
@@ -76,8 +76,8 @@ Add to your MCP config JSON:
 ## Usage
 
 ```
-1. mobile_find_elements(device="...") → elements with tap coordinates
-2. mobile_tap(device="...", x=tap_x, y=tap_y) → tap the element
+1. mobile_find_elements(device="...") → elements with IDs and coordinates
+2. mobile_tap(device="...", element_id=0) → tap the element by ID
 ```
 
 `mobile_find_elements` handles the full pipeline:
@@ -85,8 +85,9 @@ Add to your MCP config JSON:
 1. Takes a screenshot of the device
 2. Runs OmniParser to detect all UI elements (text + icons)
 3. Converts pixel coordinates to logical screen coordinates
+4. Registers elements by ID for subsequent tap/double_tap/long_press
 
-The returned `tap_x` / `tap_y` can be passed directly to `mobile_tap()`.
+You **must** call `mobile_find_elements` before tapping — `mobile_tap`, `mobile_double_tap`, and `mobile_long_press` require an element ID, not raw coordinates.
 
 ### Example prompts
 
@@ -114,9 +115,9 @@ The returned `tap_x` / `tap_y` can be passed directly to `mobile_tap()`.
 
 | Tool | Description |
 |------|-------------|
-| `mobile_tap` | Tap at coordinates |
-| `mobile_double_tap` | Double-tap at coordinates |
-| `mobile_long_press` | Long press at coordinates |
+| `mobile_tap` | Tap an element by ID (from `find_elements`) |
+| `mobile_double_tap` | Double-tap an element by ID |
+| `mobile_long_press` | Long press an element by ID |
 | `mobile_swipe` | Swipe in a direction (up / down / left / right) |
 | `mobile_type_text` | Type text into the focused element |
 | `mobile_press_button` | Press a hardware button (home / back / etc.) |
